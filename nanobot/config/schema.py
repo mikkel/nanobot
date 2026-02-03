@@ -207,6 +207,14 @@ class BedrockProviderConfig(ProviderConfig):
     profile: str | None = None  # Optional AWS shared config profile
 
 
+class ClaudeCliConfig(Base):
+    """Claude CLI provider configuration (uses Claude Code subscription)."""
+    enabled: bool = False
+    command: str = "claude"  # Path to claude CLI
+    default_model: str = "opus"  # opus, sonnet, haiku
+    timeout_seconds: int = 300
+
+
 class ProvidersConfig(Base):
     """Configuration for LLM providers.
 
@@ -564,6 +572,14 @@ class Config(BaseSettings):
             if spec and spec.default_api_base:
                 return spec.default_api_base
         return None
+
+    def use_claude_cli(self) -> bool:
+        """Check if Claude CLI provider should be used."""
+        return self.providers.claude_cli.enabled
+
+    def get_claude_cli_config(self) -> ClaudeCliConfig:
+        """Get Claude CLI configuration."""
+        return self.providers.claude_cli
 
     model_config = ConfigDict(env_prefix="NANOBOT_", env_nested_delimiter="__")
 
