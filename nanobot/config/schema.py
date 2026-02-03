@@ -149,12 +149,12 @@ class Config(BaseSettings):
     providers: ProvidersConfig = Field(default_factory=ProvidersConfig)
     gateway: GatewayConfig = Field(default_factory=GatewayConfig)
     tools: ToolsConfig = Field(default_factory=ToolsConfig)
-    
+
     @property
     def workspace_path(self) -> Path:
         """Get expanded workspace path."""
         return Path(self.agents.defaults.workspace).expanduser()
-    
+
     # Default base URLs for API gateways
     _GATEWAY_DEFAULTS = {"openrouter": "https://openrouter.ai/api/v1", "aihubmix": "https://aihubmix.com/v1"}
 
@@ -183,7 +183,7 @@ class Config(BaseSettings):
         """Get API key for the given model. Falls back to first available key."""
         p = self.get_provider(model)
         return p.api_key if p else None
-    
+
     def get_api_base(self, model: str | None = None) -> str | None:
         """Get API base URL for the given model. Applies default URLs for known gateways."""
         p = self.get_provider(model)
@@ -194,15 +194,15 @@ class Config(BaseSettings):
             if p == getattr(self.providers, name):
                 return url
         return None
-    
+
     def use_claude_cli(self) -> bool:
         """Check if Claude CLI provider should be used."""
         return self.providers.claude_cli.enabled
-    
+
     def get_claude_cli_config(self) -> ClaudeCliConfig:
         """Get Claude CLI configuration."""
         return self.providers.claude_cli
-    
+
     class Config:
         env_prefix = "NANOBOT_"
         env_nested_delimiter = "__"
