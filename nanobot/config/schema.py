@@ -134,12 +134,12 @@ class Config(BaseSettings):
     providers: ProvidersConfig = Field(default_factory=ProvidersConfig)
     gateway: GatewayConfig = Field(default_factory=GatewayConfig)
     tools: ToolsConfig = Field(default_factory=ToolsConfig)
-    
+
     @property
     def workspace_path(self) -> Path:
         """Get expanded workspace path."""
         return Path(self.agents.defaults.workspace).expanduser()
-    
+
     def get_api_key(self) -> str | None:
         """Get API key in priority order: OpenRouter > Anthropic > OpenAI > Gemini > Zhipu > Groq > vLLM."""
         return (
@@ -152,7 +152,7 @@ class Config(BaseSettings):
             self.providers.vllm.api_key or
             None
         )
-    
+
     def get_api_base(self) -> str | None:
         """Get API base URL if using OpenRouter, Zhipu or vLLM."""
         if self.providers.openrouter.api_key:
@@ -162,15 +162,15 @@ class Config(BaseSettings):
         if self.providers.vllm.api_base:
             return self.providers.vllm.api_base
         return None
-    
+
     def use_claude_cli(self) -> bool:
         """Check if Claude CLI provider should be used."""
         return self.providers.claude_cli.enabled
-    
+
     def get_claude_cli_config(self) -> ClaudeCliConfig:
         """Get Claude CLI configuration."""
         return self.providers.claude_cli
-    
+
     class Config:
         env_prefix = "NANOBOT_"
         env_nested_delimiter = "__"
