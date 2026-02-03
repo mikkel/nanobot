@@ -169,6 +169,38 @@ def _make_provider(config):
 # ============================================================================
 
 
+def _create_provider(config):
+    """Create the appropriate LLM provider based on config."""
+    from nanobot.providers.litellm_provider import LiteLLMProvider
+    from nanobot.providers.claude_cli import ClaudeCliProvider
+    
+    # Check if Claude CLI is enabled (uses subscription instead of API)
+    if config.use_claude_cli():
+        cli_config = config.get_claude_cli_config()
+        console.print(f"[cyan]Using Claude CLI provider (subscription mode)[/cyan]")
+        return ClaudeCliProvider(
+            default_model=cli_config.default_model,
+            command=cli_config.command,
+            timeout_seconds=cli_config.timeout_seconds,
+            working_dir=str(config.workspace_path),
+        )
+    
+    # Fall back to LiteLLM provider (API mode)
+    api_key = config.get_api_key()
+    api_base = config.get_api_base()
+    model = config.agents.defaults.model
+    is_bedrock = model.startswith("bedrock/")
+    
+    if not api_key and not is_bedrock:
+        return None  # Caller should handle this
+    
+    return LiteLLMProvider(
+        api_key=api_key,
+        api_base=api_base,
+        default_model=config.agents.defaults.model
+    )
+
+
 @app.command()
 def gateway(
     port: int = typer.Option(18790, "--port", "-p", help="Gateway port"),
@@ -191,12 +223,21 @@ def gateway(
     
     config = load_config()
     bus = MessageBus()
-    provider = _make_provider(config)
-    
+
+    # Create provider (supports Claude CLI or API)
+    provider = _create_provider(config)
+
+    if provider is None:
+        console.print("[red]Error: No API key configured and Claude CLI not enabled.[/red]")
+        console.print("Options:")
+        console.print("  1. Set API key in ~/.nanobot/config.json under providers.openrouter.apiKey")
+        console.print("  2. Enable Claude CLI: set providers.claude_cli.enabled = true")
+        raise typer.Exit(1)
+
     # Create cron service first (callback set after agent creation)
     cron_store_path = get_data_dir() / "cron" / "jobs.json"
     cron = CronService(cron_store_path)
-    
+
     # Create agent with cron service
     agent = AgentLoop(
         bus=bus,
@@ -292,8 +333,14 @@ def agent(
     
     config = load_config()
     
+    # Create provider (supports Claude CLI or API)
+    provider = _create_provider(config)
+
+    if provider is None:
+        console.print("[red]Error: No API key configured and Claude CLI not enabled.[/red]")
+        raise typer.Exit(1)
+
     bus = MessageBus()
-    provider = _make_provider(config)
     
     agent_loop = AgentLoop(
         bus=bus,
@@ -660,6 +707,13 @@ def status():
         console.print(f"AiHubMix API: {'[green]✓[/green]' if has_aihubmix else '[dim]not set[/dim]'}")
         vllm_status = f"[green]✓ {config.providers.vllm.api_base}[/green]" if has_vllm else "[dim]not set[/dim]"
         console.print(f"vLLM/Local: {vllm_status}")
+        
+        # Claude CLI status
+        claude_cli = config.providers.claude_cli
+        if claude_cli.enabled:
+            console.print(f"Claude CLI: [green]✓ enabled[/green] (model: {claude_cli.default_model})")
+        else:
+            console.print(f"Claude CLI: [dim]disabled[/dim]")
 
 
 if __name__ == "__main__":
