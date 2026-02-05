@@ -244,7 +244,7 @@ class AgentLoop:
                 final_content = summary_response.content or "I've completed processing but have no response to give."
             except Exception:
                 final_content = "I've completed processing but have no response to give."
-        
+
         # Log response preview
         preview = final_content[:120] + "..." if len(final_content) > 120 else final_content
         logger.info(f"Response to {msg.channel}:{msg.sender_id}: {preview}")
