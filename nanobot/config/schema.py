@@ -18,6 +18,26 @@ if TYPE_CHECKING:
     from nanobot.agent.tools.web import WebToolsConfig
 
 
+class SlackDMConfig(Base):
+    """Slack DM policy configuration."""
+    enabled: bool = True
+    policy: str = "open"  # "open" or "allowlist"
+    allow_from: list[str] = Field(default_factory=list)  # Allowed Slack user IDs
+
+
+class SlackConfig(Base):
+    """Slack channel configuration."""
+    enabled: bool = False
+    mode: str = "socket"  # "socket" supported
+    webhook_path: str = "/slack/events"
+    bot_token: str = ""  # xoxb-...
+    app_token: str = ""  # xapp-...
+    user_token_read_only: bool = True
+    group_policy: str = "open"  # "open", "mention", "allowlist"
+    group_allow_from: list[str] = Field(default_factory=list)  # Allowed channel IDs if allowlist
+    dm: SlackDMConfig = Field(default_factory=SlackDMConfig)
+
+
 class ChannelsConfig(Base):
     """Configuration for chat channels.
 
