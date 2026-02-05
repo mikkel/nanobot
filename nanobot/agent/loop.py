@@ -210,7 +210,21 @@ class AgentLoop:
                 break
         
         if final_content is None:
-            final_content = "I've completed processing but have no response to give."
+            # LLM finished with tool calls but no text — ask it to summarize
+            messages = self.context.add_assistant_message(messages, None, [])
+            messages.append({
+                "role": "user",
+                "content": "[System] Your tool calls are complete. Summarize what you accomplished and give a concise status update."
+            })
+            try:
+                summary_response = await self.provider.chat(
+                    messages=messages,
+                    tools=None,
+                    model=self.model
+                )
+                final_content = summary_response.content or "Done."
+            except Exception:
+                final_content = "Done."
         
         # Save to session
         session.add_message("user", msg.content)
@@ -303,7 +317,21 @@ class AgentLoop:
                 break
         
         if final_content is None:
-            final_content = "Background task completed."
+            # LLM finished with tool calls but no text — ask it to summarize
+            messages = self.context.add_assistant_message(messages, None, [])
+            messages.append({
+                "role": "user",
+                "content": "[System] Your tool calls are complete. Summarize what you accomplished and give a concise status update."
+            })
+            try:
+                summary_response = await self.provider.chat(
+                    messages=messages,
+                    tools=None,
+                    model=self.model
+                )
+                final_content = summary_response.content or "Done."
+            except Exception:
+                final_content = "Done."
         
         # Save to session (mark as system message in history)
         session.add_message("user", f"[System: {msg.sender_id}] {msg.content}")
