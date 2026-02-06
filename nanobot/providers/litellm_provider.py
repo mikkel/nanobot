@@ -1,10 +1,13 @@
 """LiteLLM provider implementation for multi-provider support."""
 
+import json
 import os
+import time
 from typing import Any
 
 import litellm
 from litellm import acompletion
+from loguru import logger
 
 from nanobot.providers.base import LLMProvider, LLMResponse, ToolCallRequest
 
@@ -146,10 +149,28 @@ class LiteLLMProvider(LLMProvider):
             kwargs["tool_choice"] = "auto"
         
         try:
+            payload_size = sum(len(json.dumps(m)) for m in messages)
+            tool_count = len(tools) if tools else 0
+            logger.info(
+                f"LiteLLM request: model={model}, msgs={len(messages)}, "
+                f"payload={payload_size:,}B, tools={tool_count}"
+            )
+
             kwargs["api_key"] = self.api_key
+            t0 = time.monotonic()
             response = await acompletion(**kwargs)
-            return self._parse_response(response)
+            elapsed = time.monotonic() - t0
+
+            parsed = self._parse_response(response)
+            logger.info(
+                f"LiteLLM response: {elapsed:.1f}s, model={model}, "
+                f"content={len(parsed.content or ''):,}B, "
+                f"tool_calls={len(parsed.tool_calls)}, "
+                f"finish={parsed.finish_reason}"
+            )
+            return parsed
         except Exception as e:
+            logger.error(f"LiteLLM error: model={model}, error={e}")
             # Return error as content for graceful handling
             return LLMResponse(
                 content=f"Error calling LLM: {str(e)}",
