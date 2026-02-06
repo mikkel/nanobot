@@ -4,6 +4,7 @@ import asyncio
 import json
 import os
 import tempfile
+import time
 from pathlib import Path
 from typing import Any
 
@@ -111,6 +112,21 @@ class ClaudeCliProvider(LLMProvider):
         
         # Build prompt from messages (include full conversation history)
         prompt = self._build_prompt_from_messages(messages)
+        system_prompt = self._extract_system_prompt(messages)
+
+        # Log request size for debugging
+        prompt_bytes = len(prompt.encode("utf-8"))
+        system_bytes = len(system_prompt.encode("utf-8")) if system_prompt else 0
+        msg_count = len([m for m in messages if m.get("role") != "system"])
+        logger.info(
+            f"CLI request: model={model}, messages={msg_count}, "
+            f"prompt={prompt_bytes:,}B, system={system_bytes:,}B, "
+            f"total={prompt_bytes + system_bytes:,}B"
+        )
+        logger.debug(f"CLI system prompt ({system_bytes:,}B):\n{(system_prompt or '(none)')[:2000]}")
+        logger.debug(f"CLI prompt ({prompt_bytes:,}B):\n{prompt[:5000]}")
+        if len(prompt) > 5000:
+            logger.debug(f"CLI prompt tail:\n...{prompt[-2000:]}")
 
         # NOTE: We intentionally DON'T use Claude CLI's --resume feature
         # because we manage our own session history. Using --resume would
@@ -122,7 +138,7 @@ class ClaudeCliProvider(LLMProvider):
                 prompt=prompt,
                 model=model,
                 session_id=None,  # Don't resume - we pass full history
-                system_prompt=self._extract_system_prompt(messages),
+                system_prompt=system_prompt,
             )
             
             return LLMResponse(
@@ -133,8 +149,14 @@ class ClaudeCliProvider(LLMProvider):
             )
             
         except asyncio.TimeoutError:
+            logger.error(
+                f"CLI request timed out: model={model}, messages={msg_count}, "
+                f"prompt={prompt_bytes:,}B, system={system_bytes:,}B, "
+                f"timeout={self.timeout_seconds}s"
+            )
             return LLMResponse(
-                content="Error: Claude CLI timed out.",
+                content=f"Error: Claude CLI timed out after {self.timeout_seconds}s "
+                        f"(prompt={prompt_bytes:,}B, {msg_count} messages).",
                 finish_reason="error",
             )
         except Exception as e:
@@ -228,9 +250,13 @@ class ClaudeCliProvider(LLMProvider):
             env.pop("ANTHROPIC_API_KEY_OLD", None)
             logger.debug("Using CLI subscription mode")
         
-        logger.debug(f"Running Claude CLI: {self.command} with model={model}")
-        
+        prompt_bytes = len(prompt.encode("utf-8"))
+        cmd_str = " ".join(args)
+        logger.debug(f"Running Claude CLI: {cmd_str}")
+        logger.debug(f"CLI stdin: {prompt_bytes:,}B, timeout={self.timeout_seconds}s")
+
         # Run the CLI with prompt via stdin
+        t0 = time.monotonic()
         process = await asyncio.create_subprocess_exec(
             *args,
             stdin=asyncio.subprocess.PIPE,
@@ -239,7 +265,7 @@ class ClaudeCliProvider(LLMProvider):
             cwd=self.working_dir,
             env=env,
         )
-        
+
         try:
             # Pass prompt via stdin
             stdout, stderr = await asyncio.wait_for(
@@ -247,15 +273,30 @@ class ClaudeCliProvider(LLMProvider):
                 timeout=self.timeout_seconds,
             )
         except asyncio.TimeoutError:
+            elapsed = time.monotonic() - t0
             process.kill()
             await process.wait()
+            logger.error(
+                f"CLI TIMEOUT after {elapsed:.1f}s (limit={self.timeout_seconds}s): "
+                f"model={model}, stdin={prompt_bytes:,}B"
+            )
             raise
-        
+
+        elapsed = time.monotonic() - t0
         stdout_text = stdout.decode("utf-8").strip()
         stderr_text = stderr.decode("utf-8").strip()
-        
+
+        logger.info(
+            f"CLI completed in {elapsed:.1f}s: model={model}, "
+            f"stdin={prompt_bytes:,}B, stdout={len(stdout_text):,}B, "
+            f"returncode={process.returncode}"
+        )
+        if stderr_text:
+            logger.debug(f"CLI stderr: {stderr_text[:1000]}")
+
         if process.returncode != 0:
             error_msg = stderr_text or stdout_text or "CLI failed with no output"
+            logger.error(f"CLI failed (code {process.returncode}): {error_msg[:500]}")
             raise RuntimeError(f"Claude CLI failed (code {process.returncode}): {error_msg}")
         
         # Parse JSON output
