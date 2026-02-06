@@ -22,7 +22,10 @@ CLAUDE_MODEL_ALIASES: dict[str, str] = {
     "claude-opus-4-5": "opus",
     "claude-opus-4": "opus",
     "anthropic/claude-opus-4-5": "opus",  # Support LiteLLM format
+    "anthropic/claude-opus-4-6": "opus",
+    "anthropic/claude-opus-4.6": "opus",
     "anthropic/claude-opus-4": "opus",
+    "claude-opus-4-6": "opus",
     "sonnet": "sonnet",
     "sonnet-4.5": "sonnet",
     "sonnet-4.1": "sonnet",
