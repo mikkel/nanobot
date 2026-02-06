@@ -209,9 +209,15 @@ def gateway(
     from nanobot.cron.types import CronJob
     from nanobot.heartbeat.service import HeartbeatService
     
+    import sys
+    from loguru import logger as _logger
+
+    # Configure loguru based on verbosity
+    _logger.remove()  # Remove default handler
     if verbose:
-        import logging
-        logging.basicConfig(level=logging.DEBUG)
+        _logger.add(sys.stderr, level="DEBUG")
+    else:
+        _logger.add(sys.stderr, level="INFO")
     
     console.print(f"{__logo__} Starting nanobot gateway on port {port}...")
     

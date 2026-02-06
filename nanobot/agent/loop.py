@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import time
 from pathlib import Path
 from typing import Any
 
@@ -172,10 +173,31 @@ class AgentLoop:
             iteration += 1
             
             # Call LLM
+            msg_sizes = [len(json.dumps(m)) for m in messages]
+            total_payload = sum(msg_sizes)
+            tool_count = len(self.tools.get_definitions()) if self.tools else 0
+            logger.info(
+                f"LLM call: iter={iteration}/{self.max_iterations}, "
+                f"model={self.model}, msgs={len(messages)}, "
+                f"payload={total_payload:,}B, tools={tool_count}, "
+                f"provider={type(self.provider).__name__}"
+            )
+            logger.debug(f"LLM message roles: {[m.get('role') for m in messages]}")
+            logger.debug(f"LLM message sizes: {msg_sizes}")
+
+            t0 = time.monotonic()
             response = await self.provider.chat(
                 messages=messages,
                 tools=self.tools.get_definitions(),
                 model=self.model
+            )
+            elapsed = time.monotonic() - t0
+
+            logger.info(
+                f"LLM response: {elapsed:.1f}s, "
+                f"content={len(response.content or ''):,}B, "
+                f"tool_calls={len(response.tool_calls)}, "
+                f"finish={response.finish_reason}"
             )
             
             # Handle tool calls
