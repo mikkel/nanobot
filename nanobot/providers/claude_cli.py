@@ -336,7 +336,7 @@ class ClaudeCliProvider(LLMProvider):
             try:
                 event = json.loads(line)
                 self._log_cli_event(event)
-            except (json.JSONDecodeError, TypeError):
+            except Exception:
                 if line.strip():
                     logger.debug(f"CLI raw: {line[:300]}")
 
@@ -381,17 +381,20 @@ class ClaudeCliProvider(LLMProvider):
             # Tool result coming back
             msg = event.get("message", {})
             content_blocks = msg.get("content", [])
-            for block in content_blocks:
-                if block.get("type") == "tool_result":
-                    tool_id = block.get("tool_use_id", "?")[:12]
-                    result_text = str(block.get("content", ""))
-                    is_err = block.get("is_error", False)
-                    status = "ERROR" if is_err else "ok"
-                    logger.info(f"CLI tool result: {status}, {len(result_text):,}B")
-                    logger.debug(f"CLI tool result: {result_text[:300]}")
+            if isinstance(content_blocks, list):
+                for block in content_blocks:
+                    if not isinstance(block, dict):
+                        continue
+                    if block.get("type") == "tool_result":
+                        result_content = block.get("content", "")
+                        result_text = str(result_content) if not isinstance(result_content, str) else result_content
+                        is_err = block.get("is_error", False)
+                        status = "ERROR" if is_err else "ok"
+                        logger.info(f"CLI tool result: {status}, {len(result_text):,}B")
+                        logger.debug(f"CLI tool result: {result_text[:300]}")
             # Also check tool_use_result for richer info
-            tur = event.get("tool_use_result", {})
-            if tur:
+            tur = event.get("tool_use_result")
+            if isinstance(tur, dict):
                 stdout = tur.get("stdout", "")
                 stderr = tur.get("stderr", "")
                 if stderr:
