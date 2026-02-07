@@ -226,7 +226,8 @@ class ClaudeCliProvider(LLMProvider):
         args = [
             self.command,
             "-p",  # Print mode (non-interactive)
-            "--output-format", "json",
+            "--output-format", "stream-json",
+            "--verbose",
             "--dangerously-skip-permissions",
             "--model", model,
         ]
@@ -340,49 +341,88 @@ class ClaudeCliProvider(LLMProvider):
                     logger.debug(f"CLI raw: {line[:300]}")
 
     def _log_cli_event(self, event: dict[str, Any]) -> None:
-        """Log a structured Claude CLI JSON event."""
+        """Log a structured Claude CLI stream-json event."""
         etype = event.get("type", "")
 
         if etype == "assistant" and "message" in event:
             msg = event["message"]
             stop = msg.get("stop_reason", "")
             usage = msg.get("usage", {})
-            logger.info(
-                f"CLI assistant: stop={stop}, "
-                f"input_tokens={usage.get('input_tokens', '?')}, "
-                f"output_tokens={usage.get('output_tokens', '?')}"
-            )
+            # Log tool_use and text blocks from content
+            content_blocks = msg.get("content", [])
+            for block in content_blocks:
+                btype = block.get("type", "")
+                if btype == "tool_use":
+                    tool_name = block.get("name", "?")
+                    tool_input = block.get("input", {})
+                    # Show the most useful arg (command for Bash, path for Read, etc.)
+                    detail = (
+                        tool_input.get("command")
+                        or tool_input.get("file_path")
+                        or tool_input.get("path")
+                        or tool_input.get("pattern")
+                        or tool_input.get("query")
+                        or tool_input.get("prompt", "")[:100]
+                        or str(tool_input)[:100]
+                    )
+                    logger.info(f"CLI tool: {tool_name}({detail})")
+                elif btype == "text":
+                    text = block.get("text", "")
+                    if text.strip():
+                        logger.debug(f"CLI text: {text[:200]}")
+            if stop:
+                logger.info(
+                    f"CLI turn done: stop={stop}, "
+                    f"in={usage.get('input_tokens', '?')}, "
+                    f"out={usage.get('output_tokens', '?')}"
+                )
 
-        elif etype == "content_block_start":
-            block = event.get("content_block", {})
-            btype = block.get("type", "")
-            if btype == "tool_use":
-                logger.info(f"CLI tool_use: {block.get('name', '?')}")
-            elif btype == "text":
-                logger.debug("CLI text block start")
-
-        elif etype == "content_block_stop":
-            # Try to log tool input after block completes
-            pass
+        elif etype == "user":
+            # Tool result coming back
+            msg = event.get("message", {})
+            content_blocks = msg.get("content", [])
+            for block in content_blocks:
+                if block.get("type") == "tool_result":
+                    tool_id = block.get("tool_use_id", "?")[:12]
+                    result_text = str(block.get("content", ""))
+                    is_err = block.get("is_error", False)
+                    status = "ERROR" if is_err else "ok"
+                    logger.info(f"CLI tool result: {status}, {len(result_text):,}B")
+                    logger.debug(f"CLI tool result: {result_text[:300]}")
+            # Also check tool_use_result for richer info
+            tur = event.get("tool_use_result", {})
+            if tur:
+                stdout = tur.get("stdout", "")
+                stderr = tur.get("stderr", "")
+                if stderr:
+                    logger.warning(f"CLI tool stderr: {stderr[:300]}")
+                if stdout:
+                    logger.debug(f"CLI tool stdout: {stdout[:300]}")
 
         elif etype == "result":
             # Final result from -p mode
             cost = event.get("total_cost_usd")
             session_id = event.get("session_id", "")[:12]
+            turns = event.get("num_turns", "?")
+            duration = event.get("duration_ms", 0)
             result_preview = str(event.get("result", ""))[:200]
             logger.info(
-                f"CLI result: session={session_id}..., "
-                f"cost=${cost or '?'}"
+                f"CLI done: {turns} turns, {duration}ms, "
+                f"cost=${cost or '?'}, session={session_id}..."
             )
-            logger.debug(f"CLI result preview: {result_preview}")
+            logger.debug(f"CLI result: {result_preview}")
 
         elif etype == "system":
-            # System messages (session info, etc.)
             sub = event.get("subtype", "")
-            logger.debug(f"CLI system: {sub}")
+            if sub == "init":
+                tools = event.get("tools", [])
+                model = event.get("model", "?")
+                logger.info(f"CLI init: model={model}, tools={len(tools)}")
+            else:
+                logger.debug(f"CLI system: {sub}")
 
         elif etype == "error":
-            logger.error(f"CLI event error: {event.get('error', event)}")
+            logger.error(f"CLI error: {event.get('error', event)}")
 
     def _parse_cli_output(self, output: str) -> dict[str, Any]:
         """Parse Claude CLI JSON output."""
