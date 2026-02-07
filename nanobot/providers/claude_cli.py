@@ -258,7 +258,7 @@ class ClaudeCliProvider(LLMProvider):
         logger.debug(f"Running Claude CLI: {cmd_str}")
         logger.debug(f"CLI stdin: {prompt_bytes:,}B, timeout={self.timeout_seconds}s")
 
-        # Run the CLI with prompt via stdin
+        # Run the CLI with prompt via stdin, streaming stdout for live logging
         t0 = time.monotonic()
         process = await asyncio.create_subprocess_exec(
             *args,
@@ -269,15 +269,20 @@ class ClaudeCliProvider(LLMProvider):
             env=env,
         )
 
+        # Send prompt via stdin then close it
+        process.stdin.write(prompt.encode("utf-8"))
+        await process.stdin.drain()
+        process.stdin.close()
+        await process.stdin.wait_closed()
+
+        # Read stdout line-by-line for live logging
+        stdout_lines: list[str] = []
         try:
-            # Pass prompt via stdin
+            read_coro = self._stream_stdout(process, stdout_lines)
             if self.timeout_seconds > 0:
-                stdout, stderr = await asyncio.wait_for(
-                    process.communicate(input=prompt.encode("utf-8")),
-                    timeout=self.timeout_seconds,
-                )
+                await asyncio.wait_for(read_coro, timeout=self.timeout_seconds)
             else:
-                stdout, stderr = await process.communicate(input=prompt.encode("utf-8"))
+                await read_coro
         except asyncio.TimeoutError:
             elapsed = time.monotonic() - t0
             process.kill()
@@ -288,9 +293,13 @@ class ClaudeCliProvider(LLMProvider):
             )
             raise
 
+        # Drain stderr after process completes
+        stderr_data = await process.stderr.read()
+        await process.wait()
+
         elapsed = time.monotonic() - t0
-        stdout_text = stdout.decode("utf-8").strip()
-        stderr_text = stderr.decode("utf-8").strip()
+        stdout_text = "\n".join(stdout_lines)
+        stderr_text = stderr_data.decode("utf-8").strip()
 
         logger.info(
             f"CLI completed in {elapsed:.1f}s: model={model}, "
@@ -304,10 +313,77 @@ class ClaudeCliProvider(LLMProvider):
             error_msg = stderr_text or stdout_text or "CLI failed with no output"
             logger.error(f"CLI failed (code {process.returncode}): {error_msg[:500]}")
             raise RuntimeError(f"Claude CLI failed (code {process.returncode}): {error_msg}")
-        
+
         # Parse JSON output
         return self._parse_cli_output(stdout_text)
     
+    async def _stream_stdout(
+        self,
+        process: asyncio.subprocess.Process,
+        lines: list[str],
+    ) -> None:
+        """Read stdout line-by-line and log Claude CLI events in real time."""
+        assert process.stdout is not None
+        while True:
+            line_bytes = await process.stdout.readline()
+            if not line_bytes:
+                break
+            line = line_bytes.decode("utf-8").rstrip("\n")
+            lines.append(line)
+
+            # Try to parse as JSON event for live logging
+            try:
+                event = json.loads(line)
+                self._log_cli_event(event)
+            except (json.JSONDecodeError, TypeError):
+                if line.strip():
+                    logger.debug(f"CLI raw: {line[:300]}")
+
+    def _log_cli_event(self, event: dict[str, Any]) -> None:
+        """Log a structured Claude CLI JSON event."""
+        etype = event.get("type", "")
+
+        if etype == "assistant" and "message" in event:
+            msg = event["message"]
+            stop = msg.get("stop_reason", "")
+            usage = msg.get("usage", {})
+            logger.info(
+                f"CLI assistant: stop={stop}, "
+                f"input_tokens={usage.get('input_tokens', '?')}, "
+                f"output_tokens={usage.get('output_tokens', '?')}"
+            )
+
+        elif etype == "content_block_start":
+            block = event.get("content_block", {})
+            btype = block.get("type", "")
+            if btype == "tool_use":
+                logger.info(f"CLI tool_use: {block.get('name', '?')}")
+            elif btype == "text":
+                logger.debug("CLI text block start")
+
+        elif etype == "content_block_stop":
+            # Try to log tool input after block completes
+            pass
+
+        elif etype == "result":
+            # Final result from -p mode
+            cost = event.get("total_cost_usd")
+            session_id = event.get("session_id", "")[:12]
+            result_preview = str(event.get("result", ""))[:200]
+            logger.info(
+                f"CLI result: session={session_id}..., "
+                f"cost=${cost or '?'}"
+            )
+            logger.debug(f"CLI result preview: {result_preview}")
+
+        elif etype == "system":
+            # System messages (session info, etc.)
+            sub = event.get("subtype", "")
+            logger.debug(f"CLI system: {sub}")
+
+        elif etype == "error":
+            logger.error(f"CLI event error: {event.get('error', event)}")
+
     def _parse_cli_output(self, output: str) -> dict[str, Any]:
         """Parse Claude CLI JSON output."""
         if not output:
