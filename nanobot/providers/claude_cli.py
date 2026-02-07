@@ -260,6 +260,8 @@ class ClaudeCliProvider(LLMProvider):
         logger.debug(f"CLI stdin: {prompt_bytes:,}B, timeout={self.timeout_seconds}s")
 
         # Run the CLI with prompt via stdin, streaming stdout for live logging
+        # Bump stream limit to 4MB — Claude CLI can emit very large JSON lines
+        # (e.g. tool results with file contents) that exceed the 64KB default.
         t0 = time.monotonic()
         process = await asyncio.create_subprocess_exec(
             *args,
@@ -268,6 +270,7 @@ class ClaudeCliProvider(LLMProvider):
             stderr=asyncio.subprocess.PIPE,
             cwd=self.working_dir,
             env=env,
+            limit=4 * 1024 * 1024,
         )
 
         # Send prompt via stdin then close it
