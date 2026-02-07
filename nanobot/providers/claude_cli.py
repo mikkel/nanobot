@@ -425,91 +425,56 @@ class ClaudeCliProvider(LLMProvider):
             logger.error(f"CLI error: {event.get('error', event)}")
 
     def _parse_cli_output(self, output: str) -> dict[str, Any]:
-        """Parse Claude CLI JSON output."""
+        """Parse Claude CLI stream-json output.
+
+        stream-json emits one JSON object per line. We look for:
+        - type=result: final result with text, session_id, usage, cost
+        - type=assistant: intermediate messages (text/tool_use blocks)
+
+        The "result" event is authoritative — it has the final response text.
+        """
         if not output:
             return {"text": "", "session_id": None}
-        
-        try:
-            # Try parsing as single JSON object
-            data = json.loads(output)
-            return self._extract_from_json(data)
-        except json.JSONDecodeError:
-            pass
-        
-        # Try parsing as JSONL (multiple JSON objects)
-        result_text = []
-        session_id = None
-        usage = {}
-        
+
+        # Parse all JSONL events, find the result event
+        result_event = None
+        last_assistant_text = ""
+
         for line in output.split("\n"):
             line = line.strip()
             if not line:
                 continue
             try:
                 data = json.loads(line)
-                extracted = self._extract_from_json(data)
-                if extracted.get("text"):
-                    result_text.append(extracted["text"])
-                if extracted.get("session_id"):
-                    session_id = extracted["session_id"]
-                if extracted.get("usage"):
-                    usage = extracted["usage"]
             except json.JSONDecodeError:
-                # Non-JSON line, might be raw text
-                result_text.append(line)
-        
+                continue
+
+            etype = data.get("type", "")
+
+            if etype == "result":
+                result_event = data
+            elif etype == "assistant":
+                # Extract text from content blocks as fallback
+                for block in data.get("message", {}).get("content", []):
+                    if block.get("type") == "text" and isinstance(block.get("text"), str):
+                        last_assistant_text = block["text"]
+
+        # Use result event if found (preferred)
+        if result_event:
+            text = result_event.get("result", "") or ""
+            if result_event.get("is_error") or result_event.get("subtype") == "error":
+                text = f"Error: {text}" if text else "Error: Unknown CLI error"
+            return {
+                "text": text,
+                "session_id": result_event.get("session_id"),
+                "usage": result_event.get("usage", {}),
+            }
+
+        # Fallback: use last assistant text
         return {
-            "text": "\n".join(result_text),
-            "session_id": session_id,
-            "usage": usage,
-        }
-    
-    def _extract_from_json(self, data: dict[str, Any]) -> dict[str, Any]:
-        """Extract relevant fields from parsed JSON.
-        
-        Claude CLI output format (--output-format json):
-        {
-            "type": "result",
-            "subtype": "success",
-            "result": "...",  # Main response text
-            "session_id": "...",
-            "usage": {...},
-            "total_cost_usd": 0.01,
-            ...
-        }
-        """
-        # Check for error
-        if data.get("is_error") or data.get("subtype") == "error":
-            error_msg = data.get("result") or data.get("error") or "Unknown error"
-            return {"text": f"Error: {error_msg}", "session_id": None, "usage": {}}
-        
-        # Get response text - "result" is the main field in Claude CLI JSON output
-        text = (
-            data.get("result") or
-            data.get("response") or
-            data.get("content") or
-            data.get("text") or
-            data.get("message") or
-            ""
-        )
-        
-        session_id = (
-            data.get("session_id") or
-            data.get("sessionId") or
-            data.get("conversation_id") or
-            data.get("conversationId") or
-            None
-        )
-        
-        # Extract usage info (Claude CLI format)
-        usage = data.get("usage", {})
-        if data.get("total_cost_usd"):
-            usage["total_cost_usd"] = data["total_cost_usd"]
-        
-        return {
-            "text": text,
-            "session_id": session_id,
-            "usage": usage,
+            "text": last_assistant_text or "",
+            "session_id": None,
+            "usage": {},
         }
     
     def get_default_model(self) -> str:
