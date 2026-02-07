@@ -344,10 +344,15 @@ def agent(
     session_id: str = typer.Option("cli:default", "--session", "-s", help="Session ID"),
 ):
     """Interact with the agent directly."""
+    import sys
+    from loguru import logger as _logger
     from nanobot.config.loader import load_config
     from nanobot.bus.queue import MessageBus
     from nanobot.agent.loop import AgentLoop
-    
+
+    _logger.remove()
+    _logger.add(sys.stderr, level="INFO")
+
     config = load_config()
     
     # Create provider (supports Claude CLI or API)
