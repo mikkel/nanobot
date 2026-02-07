@@ -271,10 +271,13 @@ class ClaudeCliProvider(LLMProvider):
 
         try:
             # Pass prompt via stdin
-            stdout, stderr = await asyncio.wait_for(
-                process.communicate(input=prompt.encode("utf-8")),
-                timeout=self.timeout_seconds,
-            )
+            if self.timeout_seconds > 0:
+                stdout, stderr = await asyncio.wait_for(
+                    process.communicate(input=prompt.encode("utf-8")),
+                    timeout=self.timeout_seconds,
+                )
+            else:
+                stdout, stderr = await process.communicate(input=prompt.encode("utf-8"))
         except asyncio.TimeoutError:
             elapsed = time.monotonic() - t0
             process.kill()
