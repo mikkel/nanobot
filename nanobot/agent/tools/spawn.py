@@ -2,6 +2,8 @@
 
 from typing import Any, TYPE_CHECKING
 
+from loguru import logger
+
 from nanobot.agent.tools.base import Tool
 
 if TYPE_CHECKING:
@@ -57,6 +59,7 @@ class SpawnTool(Tool):
     
     async def execute(self, task: str, label: str | None = None, **kwargs: Any) -> str:
         """Spawn a subagent to execute the given task."""
+        logger.info(f"spawn: label={label or '(none)'}, origin={self._origin_channel}:{self._origin_chat_id}, task={task[:200]}")
         return await self._manager.spawn(
             task=task,
             label=label,

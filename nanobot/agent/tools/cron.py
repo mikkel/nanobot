@@ -2,6 +2,8 @@
 
 from typing import Any
 
+from loguru import logger
+
 from nanobot.agent.tools.base import Tool
 from nanobot.cron.service import CronService
 from nanobot.cron.types import CronSchedule
@@ -67,6 +69,7 @@ class CronTool(Tool):
         job_id: str | None = None,
         **kwargs: Any
     ) -> str:
+        logger.info(f"cron: action={action}, message={message[:80] if message else '(none)'}")
         if action == "add":
             return self._add_job(message, every_seconds, cron_expr)
         elif action == "list":

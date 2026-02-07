@@ -2,6 +2,8 @@
 
 from typing import Any, Callable, Awaitable
 
+from loguru import logger
+
 from nanobot.agent.tools.base import Tool
 from nanobot.bus.events import OutboundMessage
 
@@ -80,7 +82,10 @@ class MessageTool(Tool):
         )
         
         try:
+            preview = content[:120] + "..." if len(content) > 120 else content
+            logger.info(f"message: → {channel}:{chat_id} ({len(content):,}B) {preview}")
             await self._send_callback(msg)
             return f"Message sent to {channel}:{chat_id}"
         except Exception as e:
+            logger.error(f"message: send failed — {channel}:{chat_id} — {e}")
             return f"Error sending message: {str(e)}"

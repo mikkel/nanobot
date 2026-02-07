@@ -231,12 +231,16 @@ def gateway(
 
     # Configure loguru based on verbosity
     _logger.remove()  # Remove default handler
-    if verbose:
-        _logger.add(sys.stderr, level="DEBUG")
-    else:
-        _logger.add(sys.stderr, level="INFO")
-    
+    log_level = "DEBUG" if verbose else "INFO"
+    _logger.add(sys.stderr, level=log_level)
+
+    # Also log to file for easy tailing: tail -f ~/.nanobot/nanobot.log
+    log_path = get_data_dir() / "nanobot.log"
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    _logger.add(str(log_path), level="DEBUG", rotation="10 MB", retention=3)
+
     console.print(f"{__logo__} Starting nanobot gateway on port {port}...")
+    console.print(f"[dim]Logs: {log_path} (level={log_level})[/dim]")
     
     config = load_config()
     bus = MessageBus()

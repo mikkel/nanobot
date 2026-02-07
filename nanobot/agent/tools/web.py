@@ -8,6 +8,7 @@ from typing import Any
 from urllib.parse import urlparse
 
 import httpx
+from loguru import logger
 
 from nanobot.agent.tools.base import Tool
 
@@ -62,9 +63,10 @@ class WebSearchTool(Tool):
         self.max_results = max_results
     
     async def execute(self, query: str, count: int | None = None, **kwargs: Any) -> str:
+        logger.info(f"web_search: \"{query}\"")
         if not self.api_key:
             return "Error: BRAVE_API_KEY not configured"
-        
+
         try:
             n = min(max(count or self.max_results, 1), 10)
             async with httpx.AsyncClient() as client:
@@ -75,11 +77,13 @@ class WebSearchTool(Tool):
                     timeout=10.0
                 )
                 r.raise_for_status()
-            
+
             results = r.json().get("web", {}).get("results", [])
             if not results:
+                logger.info(f"web_search: no results for \"{query}\"")
                 return f"No results for: {query}"
-            
+
+            logger.info(f"web_search: {len(results)} results for \"{query}\"")
             lines = [f"Results for: {query}\n"]
             for i, item in enumerate(results[:n], 1):
                 lines.append(f"{i}. {item.get('title', '')}\n   {item.get('url', '')}")
@@ -87,6 +91,7 @@ class WebSearchTool(Tool):
                     lines.append(f"   {desc}")
             return "\n".join(lines)
         except Exception as e:
+            logger.error(f"web_search: {e}")
             return f"Error: {e}"
 
 
@@ -111,11 +116,13 @@ class WebFetchTool(Tool):
     async def execute(self, url: str, extractMode: str = "markdown", maxChars: int | None = None, **kwargs: Any) -> str:
         from readability import Document
 
+        logger.info(f"web_fetch: {url}")
         max_chars = maxChars or self.max_chars
 
         # Validate URL before fetching
         is_valid, error_msg = _validate_url(url)
         if not is_valid:
+            logger.warning(f"web_fetch: invalid URL — {url}: {error_msg}")
             return json.dumps({"error": f"URL validation failed: {error_msg}", "url": url})
 
         try:
@@ -126,9 +133,9 @@ class WebFetchTool(Tool):
             ) as client:
                 r = await client.get(url, headers={"User-Agent": USER_AGENT})
                 r.raise_for_status()
-            
+
             ctype = r.headers.get("content-type", "")
-            
+
             # JSON
             if "application/json" in ctype:
                 text, extractor = json.dumps(r.json(), indent=2), "json"
@@ -140,14 +147,16 @@ class WebFetchTool(Tool):
                 extractor = "readability"
             else:
                 text, extractor = r.text, "raw"
-            
+
             truncated = len(text) > max_chars
             if truncated:
                 text = text[:max_chars]
-            
+
+            logger.info(f"web_fetch: {r.status_code} {url} ({len(text):,}B, {extractor})")
             return json.dumps({"url": url, "finalUrl": str(r.url), "status": r.status_code,
                               "extractor": extractor, "truncated": truncated, "length": len(text), "text": text})
         except Exception as e:
+            logger.error(f"web_fetch: {url} — {e}")
             return json.dumps({"error": str(e), "url": url})
     
     def _to_markdown(self, html: str) -> str:
