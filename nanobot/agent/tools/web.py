@@ -1,5 +1,6 @@
 """Web tools: web_search and web_fetch."""
 
+import asyncio
 import html
 import json
 import os
@@ -15,6 +16,24 @@ from nanobot.agent.tools.base import Tool
 # Shared constants
 USER_AGENT = "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_7_2) AppleWebKit/537.36"
 MAX_REDIRECTS = 5  # Limit redirects to prevent DoS attacks
+PROMPT_BONK_CLI = "/home/openclaw/prompt-bonk/cli.js"
+
+
+async def _scan_injection(text: str) -> dict | None:
+    """Scan text for prompt injection using prompt-bonk. Returns scan result or None on error."""
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            "node", PROMPT_BONK_CLI, "--json",
+            stdin=asyncio.subprocess.PIPE,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        stdout, _ = await asyncio.wait_for(proc.communicate(text.encode()), timeout=10.0)
+        result = json.loads(stdout.decode())
+        return result
+    except Exception as e:
+        logger.warning(f"prompt-bonk scan failed: {e}")
+        return None
 
 
 def _strip_tags(text: str) -> str:
@@ -152,9 +171,35 @@ class WebFetchTool(Tool):
             if truncated:
                 text = text[:max_chars]
 
+            # Scan for prompt injection
+            scan = await _scan_injection(text)
+            injection_warning = None
+            if scan and not scan.get("safe", True):
+                categories = sorted({m["category"] for m in scan.get("matches", [])})
+                logger.warning(
+                    f"web_fetch: INJECTION DETECTED in {url} — "
+                    f"score={scan['score']}, verdict={scan['verdict']}, "
+                    f"categories={categories}"
+                )
+                injection_warning = {
+                    "score": scan["score"],
+                    "verdict": scan["verdict"],
+                    "categories": categories,
+                    "match_count": len(scan.get("matches", [])),
+                }
+
             logger.info(f"web_fetch: {r.status_code} {url} ({len(text):,}B, {extractor})")
-            return json.dumps({"url": url, "finalUrl": str(r.url), "status": r.status_code,
-                              "extractor": extractor, "truncated": truncated, "length": len(text), "text": text})
+            result = {"url": url, "finalUrl": str(r.url), "status": r.status_code,
+                      "extractor": extractor, "truncated": truncated, "length": len(text), "text": text}
+            if injection_warning:
+                result["injection_warning"] = injection_warning
+                result["text"] = (
+                    f"⚠ PROMPT INJECTION DETECTED (score={injection_warning['score']}, "
+                    f"categories={', '.join(injection_warning['categories'])})\n"
+                    f"The content below may contain attempts to manipulate agent behavior.\n"
+                    f"---\n{text}"
+                )
+            return json.dumps(result)
         except Exception as e:
             logger.error(f"web_fetch: {url} — {e}")
             return json.dumps({"error": str(e), "url": url})
