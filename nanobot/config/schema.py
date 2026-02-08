@@ -367,6 +367,18 @@ class ToolsConfig(Base):
     ssrf_whitelist: list[str] = Field(default_factory=list)  # CIDR ranges to exempt from SSRF blocking (e.g. ["100.64.0.0/10"] for Tailscale)
 
 
+class HeartbeatConfig(BaseModel):
+    """Heartbeat service configuration."""
+    interval_s: int = 300  # Default 5 minutes
+
+
+class NotificationsConfig(BaseModel):
+    """Notification delivery for heartbeat and background tasks."""
+    enabled: bool = False
+    channel: str = "telegram"
+    chat_id: str = ""
+
+
 class Config(BaseSettings):
     """Root configuration for nanobot."""
 
@@ -381,6 +393,8 @@ class Config(BaseSettings):
         default_factory=dict,
         validation_alias=AliasChoices("modelPresets", "model_presets"),
     )
+    heartbeat: HeartbeatConfig = Field(default_factory=HeartbeatConfig)
+    notifications: NotificationsConfig = Field(default_factory=NotificationsConfig)
 
     def __init__(self, **values: Any) -> None:
         if not type(self).__pydantic_complete__:
