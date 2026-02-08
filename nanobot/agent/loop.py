@@ -378,7 +378,8 @@ class AgentLoop:
             channel=channel,
             sender_id="user",
             chat_id=chat_id,
-            content=content
+            content=content,
+            _session_key_override=session_key,
         )
         
         response = await self._process_message(msg)

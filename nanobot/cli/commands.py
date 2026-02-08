@@ -294,14 +294,17 @@ def gateway(
     # Create heartbeat service
     async def on_heartbeat(prompt: str) -> str:
         """Execute heartbeat through the agent."""
+        from nanobot.heartbeat.service import HEARTBEAT_OK_TOKEN
         notif = config.notifications
         response = await agent.process_direct(
             prompt,
             session_key="heartbeat",
-            channel=notif.channel if notif.enabled and notif.chat_id else "cli",
-            chat_id=notif.chat_id if notif.enabled and notif.chat_id else "direct",
+            channel="heartbeat",
+            chat_id="system",
         )
-        if notif.enabled and notif.chat_id and response:
+        # Only message the user when there's actual work output (not HEARTBEAT_OK)
+        if (notif.enabled and notif.chat_id and response
+                and HEARTBEAT_OK_TOKEN.replace("_", "") not in response.upper().replace("_", "")):
             from nanobot.bus.events import OutboundMessage
             await bus.publish_outbound(OutboundMessage(
                 channel=notif.channel,
