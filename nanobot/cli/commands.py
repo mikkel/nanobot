@@ -294,12 +294,26 @@ def gateway(
     # Create heartbeat service
     async def on_heartbeat(prompt: str) -> str:
         """Execute heartbeat through the agent."""
-        return await agent.process_direct(prompt, session_key="heartbeat")
+        notif = config.notifications
+        response = await agent.process_direct(
+            prompt,
+            session_key="heartbeat",
+            channel=notif.channel if notif.enabled and notif.chat_id else "cli",
+            chat_id=notif.chat_id if notif.enabled and notif.chat_id else "direct",
+        )
+        if notif.enabled and notif.chat_id and response:
+            from nanobot.bus.events import OutboundMessage
+            await bus.publish_outbound(OutboundMessage(
+                channel=notif.channel,
+                chat_id=notif.chat_id,
+                content=response,
+            ))
+        return response
     
     heartbeat = HeartbeatService(
         workspace=config.workspace_path,
         on_heartbeat=on_heartbeat,
-        interval_s=5 * 60,  # 5 minutes
+        interval_s=config.heartbeat.interval_s,
         enabled=True
     )
     
@@ -315,7 +329,7 @@ def gateway(
     if cron_status["jobs"] > 0:
         console.print(f"[green]✓[/green] Cron: {cron_status['jobs']} scheduled jobs")
     
-    console.print(f"[green]✓[/green] Heartbeat: every 5m")
+    console.print(f"[green]✓[/green] Heartbeat: every {config.heartbeat.interval_s}s")
     
     async def run():
         try:

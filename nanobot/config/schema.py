@@ -142,6 +142,18 @@ class ToolsConfig(BaseModel):
     restrict_to_workspace: bool = False  # If true, restrict all tool access to workspace directory
 
 
+class HeartbeatConfig(BaseModel):
+    """Heartbeat service configuration."""
+    interval_s: int = 300  # Default 5 minutes
+
+
+class NotificationsConfig(BaseModel):
+    """Notification delivery for heartbeat and background tasks."""
+    enabled: bool = False
+    channel: str = "telegram"
+    chat_id: str = ""
+
+
 class Config(BaseSettings):
     """Root configuration for nanobot."""
     agents: AgentsConfig = Field(default_factory=AgentsConfig)
@@ -149,6 +161,8 @@ class Config(BaseSettings):
     providers: ProvidersConfig = Field(default_factory=ProvidersConfig)
     gateway: GatewayConfig = Field(default_factory=GatewayConfig)
     tools: ToolsConfig = Field(default_factory=ToolsConfig)
+    heartbeat: HeartbeatConfig = Field(default_factory=HeartbeatConfig)
+    notifications: NotificationsConfig = Field(default_factory=NotificationsConfig)
 
     @property
     def workspace_path(self) -> Path:
