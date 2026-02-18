@@ -16,29 +16,32 @@ from nanobot.providers.base import LLMProvider, LLMResponse, ToolCallRequest
 
 # Model aliases for Claude CLI
 CLAUDE_MODEL_ALIASES: dict[str, str] = {
-    "opus": "opus",
-    "opus-4.5": "opus",
-    "opus-4": "opus",
-    "claude-opus-4-5": "opus",
-    "claude-opus-4": "opus",
-    "anthropic/claude-opus-4-5": "opus",  # Support LiteLLM format
-    "anthropic/claude-opus-4-6": "opus",
-    "anthropic/claude-opus-4.6": "opus",
-    "anthropic/claude-opus-4": "opus",
-    "claude-opus-4-6": "opus",
-    "sonnet": "sonnet",
-    "sonnet-4.5": "sonnet",
-    "sonnet-4.1": "sonnet",
-    "sonnet-4.0": "sonnet",
-    "claude-sonnet-4-5": "sonnet",
-    "claude-sonnet-4-1": "sonnet",
-    "claude-sonnet-4-0": "sonnet",
-    "anthropic/claude-sonnet-4-5": "sonnet",  # Support LiteLLM format
-    "anthropic/claude-sonnet-4-1": "sonnet",
-    "haiku": "haiku",
-    "haiku-3.5": "haiku",
-    "claude-haiku-3-5": "haiku",
-    "anthropic/claude-haiku-3-5": "haiku",  # Support LiteLLM format
+    "opus": "claude-opus-4-6",
+    "opus-4.6": "claude-opus-4-6",
+    "opus-4.5": "claude-opus-4-5",
+    "opus-4": "claude-opus-4-6",
+    "claude-opus-4-6": "claude-opus-4-6",
+    "claude-opus-4-5": "claude-opus-4-5",
+    "claude-opus-4": "claude-opus-4-6",
+    "anthropic/claude-opus-4-5": "claude-opus-4-5",  # Support LiteLLM format
+    "anthropic/claude-opus-4-6": "claude-opus-4-6",
+    "anthropic/claude-opus-4": "claude-opus-4-6",
+    "sonnet": "claude-sonnet-4-6",
+    "sonnet-4.6": "claude-sonnet-4-6",
+    "sonnet-4.5": "claude-sonnet-4-5",
+    "sonnet-4.1": "claude-sonnet-4-1",
+    "sonnet-4.0": "claude-sonnet-4-0",
+    "claude-sonnet-4-6": "claude-sonnet-4-6",
+    "claude-sonnet-4-5": "claude-sonnet-4-5",
+    "claude-sonnet-4-1": "claude-sonnet-4-1",
+    "claude-sonnet-4-0": "claude-sonnet-4-0",
+    "anthropic/claude-sonnet-4-6": "claude-sonnet-4-6",
+    "anthropic/claude-sonnet-4-5": "claude-sonnet-4-5",  # Support LiteLLM format
+    "anthropic/claude-sonnet-4-1": "claude-sonnet-4-1",
+    "haiku": "claude-haiku-3-5",
+    "haiku-3.5": "claude-haiku-3-5",
+    "claude-haiku-3-5": "claude-haiku-3-5",
+    "anthropic/claude-haiku-3-5": "claude-haiku-3-5",  # Support LiteLLM format
 }
 
 
