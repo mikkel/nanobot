@@ -362,6 +362,49 @@ python3 ask_nanogpt_llm_model.py "anthropic/claude-opus-4.6" \
 
 ---
 
+## Multi-Variation Pipeline (generate-variations.sh)
+
+For producing multiple stylistic variations of the same song with the full TTS→ACE-Step cover×2→MP3→Telegram pipeline, use the batch script on the desktop:
+
+```bash
+~/Desktop/generate-variations.sh <config.json>
+```
+
+**Pipeline per variation:** Qwen TTS → ACE-Step cover cycle 1 (strength 0.8) → ACE-Step cover cycle 2 (strength 0.8) → ffmpeg MP3 → Telegram
+
+**Config JSON format:**
+```json
+{
+  "song_name": "my-song",
+  "telegram": true,
+  "output_dir": "/tmp",
+  "voice_instruct": "vocal style description for Qwen TTS",
+  "lyrics_plain": "lyrics without structure tags (for TTS)",
+  "lyrics_tagged": "[verse]\nlyrics with tags (for ACE-Step)",
+  "cover_strength": 0.8,
+  "audio_duration": 240,
+  "variations": [
+    { "id": "V1", "label": "Dark alt-rock", "prompt": "dark alt-rock, electric guitar..." }
+  ]
+}
+```
+
+**Key features:**
+- Reuses existing TTS audio if found on remote (skips re-generation)
+- Two-cycle ACE-Step cover for refined output (TTS→cover→cover)
+- Picks louder output when batch_size > 1 (file size as proxy)
+- ffmpeg re-encode for consistent MP3 quality
+- Optional Telegram delivery per variation
+- Full summary report at end
+
+**Example config:** `~/Desktop/generate-variations-example.json` (He Chose Her V31–V35)
+
+**Requirements:** `jq`, `ffmpeg`, `curl`, SSH access to `nanobot@192.168.0.181`
+
+**Typical runtime:** ~3 minutes per variation (90s TTS + 30s×2 ACE-Step + overhead)
+
+---
+
 ## End-to-End Example
 
 ```bash
