@@ -501,6 +501,18 @@ PROVIDERS: tuple[ProviderSpec, ...] = (
         detect_by_base_keyword="nvidia.com",
         default_api_base="https://integrate.api.nvidia.com/v1",
     ),
+    # NanoGPT: OpenAI-compatible gateway with hundreds of models
+    ProviderSpec(
+        name="nanogpt",
+        keywords=("nanogpt", "nano-gpt"),
+        env_key="NANOGPT_API_KEY",
+        display_name="NanoGPT",
+        backend="openai_compat",
+        is_gateway=True,
+        detect_by_base_keyword="nano-gpt",
+        default_api_base="https://nano-gpt.com/api/v1",
+    ),
+
     # === Auxiliary (not a primary LLM provider) ============================
     # Groq: mainly used for Whisper voice transcription, also usable for LLM
     ProviderSpec(

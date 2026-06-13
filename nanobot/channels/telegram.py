@@ -414,6 +414,8 @@ class TelegramChannel(BaseChannel):
         BotCommand("dream", "Run Dream memory consolidation now"),
         BotCommand("dream_log", "Show the latest Dream memory change"),
         BotCommand("dream_restore", "Restore Dream memory to an earlier version"),
+        BotCommand("context", "Switch conversation context"),
+        BotCommand("contexts", "List available contexts"),
         BotCommand("help", "Show available commands"),
     ]
 
@@ -443,6 +445,7 @@ class TelegramChannel(BaseChannel):
         self._stream_bufs: dict[str, _StreamBuf] = {}  # chat_id -> streaming state
         self._inbound_buffers: dict[str, list[_QueuedTelegramUpdate]] = {}
         self._inbound_workers: dict[str, asyncio.Task] = {}
+        self._active_contexts: dict[str, str] = {}  # chat_id -> context_name
 
     def is_allowed(self, sender_id: str) -> bool:
         """Preserve Telegram's legacy id|username allowlist matching."""
@@ -522,6 +525,8 @@ class TelegramChannel(BaseChannel):
                 self._forward_command,
             )
         )
+        self._app.add_handler(MessageHandler(filters.Regex(r"^/context(?:@\w+)?(?:\s+.*)?$"), self._on_context))
+        self._app.add_handler(MessageHandler(filters.Regex(r"^/contexts(?:@\w+)?$"), self._on_contexts))
         self._app.add_handler(MessageHandler(filters.Regex(r"^/help(?:@\w+)?$"), self._on_help))
 
         # Add message handler for text, photos, video, voice, documents, and locations
@@ -985,6 +990,47 @@ class TelegramChannel(BaseChannel):
             return
         await update.message.reply_text(build_help_text())
 
+    async def _on_context(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Handle /context <name> — switch conversation context."""
+        if not update.message or not update.effective_user:
+            return
+        sender_id = self._sender_id(update.effective_user)
+        if not self.is_allowed(sender_id):
+            await self._send_pairing_code_if_private(sender_id, update.message, update.effective_user)
+            return
+
+        chat_id = str(update.message.chat_id)
+        args = (update.message.text or "").split(maxsplit=1)
+        name = args[1].strip() if len(args) > 1 else ""
+
+        if not name:
+            old = self._active_contexts.pop(chat_id, None)
+            if old:
+                await update.message.reply_text(f"\u2194\ufe0f Switched back to default context (was: {old})")
+            else:
+                await update.message.reply_text("\u2139\ufe0f Already using default context. Usage: /context <name>")
+            return
+
+        self._active_contexts[chat_id] = name
+        await update.message.reply_text(f"\U0001f4ac Context switched to: {name}")
+
+    async def _on_contexts(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Handle /contexts — list available contexts for this chat."""
+        if not update.message or not update.effective_user:
+            return
+        sender_id = self._sender_id(update.effective_user)
+        if not self.is_allowed(sender_id):
+            await self._send_pairing_code_if_private(sender_id, update.message, update.effective_user)
+            return
+
+        chat_id = str(update.message.chat_id)
+        active = self._active_contexts.get(chat_id)
+        default_marker = " \u2190 active" if not active else ""
+        lines = [f"  \u2022 (default){default_marker}"]
+        if active:
+            lines.append(f"  \u2022 {active} \u2190 active")
+        await update.message.reply_text("\U0001f4ac Contexts:\n" + "\n".join(lines))
+
     @staticmethod
     def _sender_id(user) -> str:
         """Build sender_id with username for allowlist matching."""
@@ -1009,6 +1055,15 @@ class TelegramChannel(BaseChannel):
         if message_thread_id is None:
             return None
         return f"telegram:{message.chat_id}:topic:{message_thread_id}"
+
+    def _session_key_for_message(self, message) -> str | None:
+        """Derive session key, layering active context on top of topic keys."""
+        base = self._derive_topic_session_key(message)
+        chat_id = str(message.chat_id)
+        ctx = self._active_contexts.get(chat_id)
+        if ctx:
+            return f"{base or f'telegram:{chat_id}'}:ctx:{ctx}"
+        return base
 
     @staticmethod
     def _build_message_metadata(message, user) -> dict:
@@ -1277,7 +1332,7 @@ class TelegramChannel(BaseChannel):
             chat_id=str(message.chat_id),
             content=content,
             metadata=self._build_message_metadata(message, user),
-            session_key=self._derive_topic_session_key(message),
+            session_key=self._session_key_for_message(message),
             is_dm=message.chat.type == "private",
         )
 
@@ -1350,7 +1405,7 @@ class TelegramChannel(BaseChannel):
 
         str_chat_id = str(chat_id)
         metadata = self._build_message_metadata(message, user)
-        session_key = self._derive_topic_session_key(message)
+        session_key = self._session_key_for_message(message)
 
         # Telegram media groups: buffer briefly, forward as one aggregated turn.
         if media_group_id := getattr(message, "media_group_id", None):
